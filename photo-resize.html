@@ -334,14 +334,40 @@
                     cropper.destroy();
                 }
                 
-                // 默认选择5寸尺寸
-                const fiveInchOption = document.querySelector('.size-option[data-name="5寸"]');
-                if (fiveInchOption && !currentRatio) {
-                    fiveInchOption.click();
+                // 获取5寸选项
+                const defaultSizeOption = document.querySelector('.size-option[data-name="5寸"]');
+                if (defaultSizeOption && !currentRatio) {
+                    // 模拟点击5寸选项
+                    defaultSizeOption.click();
                 }
                 
+                // 检查图片是否加载完成
+                if (image.naturalWidth) {
+                    const imageRatio = image.naturalWidth / image.naturalHeight;
+                    // 如果没有选择尺寸，使用图片自身比例
+                    if (!currentRatio) {
+                        currentRatio = imageRatio;
+                    }
+                    
+                    // 调整裁剪框方向与图片方向一致
+                    let aspectRatio = currentRatio;
+                    
+                    // 如果图片是横向的(imageRatio > 1)但尺寸比例是竖向的(currentRatio < 1)
+                    // 或者图片是竖向的(imageRatio < 1)但尺寸比例是横向的(currentRatio > 1)
+                    // 则翻转比例，保持与图片方向一致
+                    if ((imageRatio > 1 && currentRatio < 1) || (imageRatio < 1 && currentRatio > 1)) {
+                        aspectRatio = 1 / currentRatio;
+                    }
+                    
+                    // 更新当前比例
+                    currentRatio = aspectRatio;
+                }
+                
+                // 设置容器宽度为父元素宽度，以避免图片显示过大
+                const containerWidth = document.querySelector('.img-container').clientWidth;
+                
                 cropper = new Cropper(image, {
-                    viewMode: 1,
+                    viewMode: 2, // 限制裁剪框不超出图片的画布
                     dragMode: 'move',
                     aspectRatio: currentRatio || NaN,
                     preview: '.img-preview',
@@ -351,15 +377,44 @@
                     cropBoxMovable: true,
                     cropBoxResizable: true,
                     toggleDragModeOnDblclick: false,
-                    autoCropArea: 1, // 裁剪框撑满画面
+                    autoCropArea: 1, // 裁剪框自动撑满图片
+                    initialAspectRatio: currentRatio,
+                    minContainerWidth: 200,
+                    minContainerHeight: 200,
                     ready: function() {
-                        // 如果有预设比例，确保裁剪框撑满画面
-                        if (currentRatio) {
-                            this.cropper.setCropBoxData({
-                                width: this.cropper.getContainerData().width * 0.8,
-                                left: this.cropper.getContainerData().width * 0.1
-                            });
+                        // 裁剪器准备好后的处理
+                        const containerData = this.cropper.getContainerData();
+                        const imageData = this.cropper.getImageData();
+                        const cropBoxData = this.cropper.getCropBoxData();
+                        
+                        // 确保图片适合容器大小
+                        let scale = 1;
+                        if (imageData.naturalWidth > containerData.width || 
+                            imageData.naturalHeight > containerData.height) {
+                            scale = Math.min(
+                                containerData.width / imageData.naturalWidth,
+                                containerData.height / imageData.naturalHeight
+                            );
                         }
+                        
+                        // 应用缩放
+                        this.cropper.zoomTo(scale);
+                        
+                        // 确保裁剪框铺满图片
+                        setTimeout(() => {
+                            // 重新获取图片数据
+                            const newImageData = this.cropper.getImageData();
+                            // 设置裁剪框大小为图片当前显示大小
+                            this.cropper.setCropBoxData({
+                                left: newImageData.left,
+                                top: newImageData.top,
+                                width: newImageData.width,
+                                height: newImageData.height
+                            });
+                            
+                            // 重置缩放滑块
+                            zoomSlider.value = scale;
+                        }, 100);
                     }
                 });
             }
@@ -375,7 +430,22 @@
                     // 获取宽度和高度
                     const width = parseFloat(this.dataset.width);
                     const height = parseFloat(this.dataset.height);
-                    currentRatio = width / height;
+                    let newRatio = width / height;
+                    
+                    // 检查图片方向
+                    if (image.naturalWidth && image.naturalHeight) {
+                        const imageRatio = image.naturalWidth / image.naturalHeight;
+                        
+                        // 如果图片是横向的(imageRatio > 1)但尺寸比例是竖向的(newRatio < 1)
+                        // 或者图片是竖向的(imageRatio < 1)但尺寸比例是横向的(newRatio > 1)
+                        // 则翻转比例，保持与图片方向一致
+                        if ((imageRatio > 1 && newRatio < 1) || (imageRatio < 1 && newRatio > 1)) {
+                            newRatio = 1 / newRatio;
+                        }
+                    }
+                    
+                    // 更新当前比例
+                    currentRatio = newRatio;
                     
                     // 更新当前尺寸标签
                     currentSizeLabel.textContent = this.dataset.name + ` (${width}mm × ${height}mm)`;
@@ -384,28 +454,13 @@
                     if (cropper) {
                         cropper.setAspectRatio(currentRatio);
                         
-                        // 设置裁剪框撑满画面
+                        // 重新调整裁剪框大小
                         setTimeout(() => {
-                            const containerData = cropper.getContainerData();
-                            const cropBoxData = cropper.getCropBoxData();
-                            
-                            // 根据容器宽度调整裁剪框大小
-                            let newWidth = containerData.width * 0.8;
-                            let newHeight = newWidth / currentRatio;
-                            
-                            // 如果计算的高度超出容器高度，则根据高度计算宽度
-                            if (newHeight > containerData.height * 0.8) {
-                                newHeight = containerData.height * 0.8;
-                                newWidth = newHeight * currentRatio;
-                            }
-                            
                             cropper.setCropBoxData({
-                                width: newWidth,
-                                height: newHeight,
-                                left: (containerData.width - newWidth) / 2,
-                                top: (containerData.height - newHeight) / 2
+                                width: cropper.getContainerData().width,
+                                height: cropper.getContainerData().height
                             });
-                        }, 0);
+                        }, 100);
                     }
                 });
             });
